@@ -7,7 +7,7 @@ import pushka.json.{parser, printer}
 import scala.language.higherKinds
 import scala.util.Try
 
-abstract class Connection[+F[_]](credentials: Credentials, eventHandler: EventHandler[F]) extends SendApi[F] {
+abstract class Connection[+F[_]](botsCredentials: Map[String,Credentials], eventHandler: EventHandler[F]) extends SendApi[F] {
 
   val apiVersion = "v2.7"
 
@@ -16,13 +16,15 @@ abstract class Connection[+F[_]](credentials: Credentials, eventHandler: EventHa
     *
     * @return response
     */
-  def send[R](endpoint: String,
+  def send[R](botName: String,
+              endpoint: String,
               params: Map[String, String],
               bodyOpt: Option[String],
               parseResponse: String => R): F[R]
 
-  def receiveVerify(params: Map[String, Seq[String]]): Try[String] = Try {
+  def receiveVerify(botName: String, params: Map[String, Seq[String]]): Try[String] = Try {
     if (params.get("hub.mode").contains(Seq("subscribe")) && params.contains("hub.challenge")) {
+      val credentials = botsCredentials(botName)
       params.get("hub.verify_token") match {
         case None => throw TokenValidationException("verify_token is not defined")
         case Some(Seq(credentials.verifyToken)) => params("hub.challenge").head
@@ -41,11 +43,11 @@ abstract class Connection[+F[_]](credentials: Credentials, eventHandler: EventHa
     * @param body String body
     * @return Response to platform
     */
-  def receive(botId: String, body: String): Try[Seq[F[_]]] = Try {
+  def receive(botName: String, body: String): Try[Seq[F[_]]] = Try {
     val webHook = pushka.json.read[Webhook](body)
     val events = webHook.entry flatMap { entry =>
       entry.messaging map { messaging =>
-        new Event(this, botId, entry.id, entry.time, messaging)
+        new Event(this, botName, entry.id, entry.time, messaging)
       }
     }
     def loop(acc: List[F[_]], list: List[Event[F]]): List[F[_]] = list match {
@@ -58,34 +60,34 @@ abstract class Connection[+F[_]](credentials: Credentials, eventHandler: EventHa
     loop(Nil, events.toList).reverse
   }
 
-  private def messagesRequestResponse(req: Request): F[Response] = {
+  private def messagesRequestResponse(botName: String, req: Request): F[Response] = {
     val json = pushka.json.write(req)
-    send("me/messages", Map.empty, Some(json), json => pushka.json.read[Response](json))
+    send(botName,"me/messages", Map.empty, Some(json), json => pushka.json.read[Response](json))
   }
 
-  def sendMessage(recipient: Id, message: Message,
+  def sendMessage(botName: String, recipient: Id, message: Message,
       notificationType: NotificationType = NotificationType.Regular): F[Response] = {
     val req = Request(recipient, Some(message), None, Some(notificationType.value))
-    messagesRequestResponse(req)
+    messagesRequestResponse(botName, req)
   }
 
-  def typingOn(recipient: Id): F[Response] = {
+  def typingOn(botName: String, recipient: Id): F[Response] = {
     val req = Request(recipient, None, Some("typing_on"), None)
-    messagesRequestResponse(req)
+    messagesRequestResponse(botName, req)
   }
 
-  def typingOff(recipient: Id): F[Response] = {
+  def typingOff(botName: String, recipient: Id): F[Response] = {
     val req = Request(recipient, None, Some("typing_off"), None)
-    messagesRequestResponse(req)
+    messagesRequestResponse(botName, req)
   }
 
-  def markSeen(recipient: Id): F[Response] = {
+  def markSeen(botName: String, recipient: Id): F[Response] = {
     val req = Request(recipient, None, Some("mark_seen"), None)
-    messagesRequestResponse(req)
+    messagesRequestResponse(botName, req)
   }
 
-  def profile(userId: Id): F[UserInfo] = {
+  def profile(botName: String, userId: Id): F[UserInfo] = {
     val params = Map("fields" -> "first_name,last_name,profile_pic,locale,timezone,gender")
-    send(userId.value, params, None, json => pushka.json.read[UserInfo](json))
+    send(botName, userId.value, params, None, json => pushka.json.read[UserInfo](json))
   }
 }

@@ -15,8 +15,8 @@ import scala.util.{Failure, Success, Try}
 import scalaz.Scalaz._
 import scalaz.concurrent.Task
 
-final class Http4sConnection(credentials: Credentials, eventHandler: EventHandler[Task])
-  extends Connection[Task](credentials, eventHandler) {
+final class Http4sConnection(botsCredentials: Map[String,Credentials], eventHandler: EventHandler[Task])
+  extends Connection[Task](botsCredentials, eventHandler) {
 
   private val logger = LoggerFactory.getLogger(Http4sConnection.getClass)
 
@@ -39,14 +39,14 @@ final class Http4sConnection(credentials: Credentials, eventHandler: EventHandle
   }
 
   val service = HttpService {
-    case GET -> Root / _ :? params =>
-      handleError(receiveVerify(params)) match {
+    case GET -> Root / botName :? params =>
+      handleError(receiveVerify(botName, params)) match {
         case Left(task) => task
         case Right(result) => Ok(result)
       }
-    case request @ POST -> Root / botId =>
+    case request @ POST -> Root / botName =>
       request.bodyAsText.runFoldMap(identity) flatMap { body =>
-        handleError(receive(botId, body)) match {
+        handleError(receive(botName, body)) match {
           case Right(tasks) =>
             val mappedTasks = tasks.map(_.map(_ => 0))
             Task.gatherUnordered(mappedTasks, exceptionCancels = true)
@@ -60,7 +60,8 @@ final class Http4sConnection(credentials: Credentials, eventHandler: EventHandle
       }
   }
 
-  def send[R](endpoint: String,
+  def send[R](botName: String,
+              endpoint: String,
               params: Map[String, String],
               bodyOpt: Option[String],
               parseResponse: String => R): Task[R] = {
@@ -72,7 +73,7 @@ final class Http4sConnection(credentials: Credentials, eventHandler: EventHandle
         case (k, v) :: xs => paramsLoop(s"&$k=$v" :: acc, xs)
       }
 
-      val paramsWithAccessToken = params + ("access_token" -> credentials.accessToken)
+      val paramsWithAccessToken = params + ("access_token" -> botsCredentials(botName).accessToken)
       val paramsPathPart = paramsLoop(Nil, paramsWithAccessToken.toList)
 
       Uri(
@@ -103,6 +104,6 @@ final class Http4sConnection(credentials: Credentials, eventHandler: EventHandle
 
 
 object Http4sConnection {
-  def apply(credentials: Credentials)(eventHandler: EventHandler[Task]): Http4sConnection =
-    new Http4sConnection(credentials, eventHandler)
+  def apply(botsCredentials: Map[String,Credentials])(eventHandler: EventHandler[Task]): Http4sConnection =
+    new Http4sConnection(botsCredentials, eventHandler)
 }

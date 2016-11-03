@@ -31,9 +31,9 @@ import org.slf4j.LoggerFactory
   * Created by z on 11.10.2016.
   */
 final class AkkaHttpConnection(
-    credentials: Credentials,
+    botsCredentials: Map[String,Credentials],
     eventHandler: EventHandler[Future])(implicit val system: ActorSystem)
-    extends Connection[Future](credentials, eventHandler) {
+    extends Connection[Future](botsCredentials, eventHandler) {
 
   private val logger = LoggerFactory.getLogger(AkkaHttpConnection.getClass)
 
@@ -59,10 +59,11 @@ final class AkkaHttpConnection(
     }
 
   val facebookRestRoute = {
-    path(Segment) { botID =>
+    path(Segment) { botName =>
       get {
+        logger.info(s"$botName")
         parameterMultiMap { params =>
-          handleError[String](receiveVerify(params)) match {
+          handleError[String](receiveVerify(botName, params)) match {
             case Left(error) => complete(error)
             case Right(result) => complete(result)
           }
@@ -70,7 +71,8 @@ final class AkkaHttpConnection(
       } ~
         post {
           entity(as[String]) { ent =>
-            handleError(receive(botID, ent)) match {
+            logger.info(s"$botName")
+            handleError(receive(botName, ent)) match {
               case Left(error) => complete(error)
               case Right(results) =>
                 complete(results.map(a => a.map(c => 0)).mkString)
@@ -85,13 +87,14 @@ final class AkkaHttpConnection(
     *
     * @return response
     */
-  override def send[R](endpoint: String,
+  override def send[R](botName: String,
+                       endpoint: String,
                        params: Map[String, String],
                        bodyOpt: Option[String],
                        parseResponse: (String) => R): Future[R] = {
 
     val fbUri = {
-      val paramsWithAccessToken = params + ("access_token" -> credentials.accessToken) // move it here cause you never use it else where
+      val paramsWithAccessToken = params + ("access_token" -> botsCredentials(botName).accessToken) // move it here cause you never use it else where
       val uri = Uri(
         scheme = "https",
         authority = Uri.Authority(host = Uri.Host("graph.facebook.com")),
@@ -122,7 +125,7 @@ final class AkkaHttpConnection(
 }
 
 object AkkaHttpConnection {
-  def apply(credentials: Credentials)(eventHandler: EventHandler[Future])(
+  def apply(botsCredentials: Map[String,Credentials])(eventHandler: EventHandler[Future])(
       implicit system: ActorSystem): AkkaHttpConnection =
-    new AkkaHttpConnection(credentials, eventHandler)
+    new AkkaHttpConnection(botsCredentials, eventHandler)
 }

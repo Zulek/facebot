@@ -23,13 +23,17 @@ In `facebot/akkahttp/src/main/scala/runDebug.scala` create `AkkaHttpConnection` 
     implicit val system = ActorSystem("facebotActorSystem")
     implicit val materializer = ActorMaterializer()
     implicit val executionContext = system.dispatcher
-
-    val facebotConnection = AkkaHttpConnection(Credentials(
-      "ACCESS_TOKEN",
-      "VERIFY_TOKEN")) {
+    val botsCredentials = Map(
+      "bot1Name" -> Credentials(
+        "BOT1_ACCESS_TOKEN",
+        "BOT1_VERIFY_TOKEN"),
+      "bot2Name" -> Credentials(
+        "BOT2_ACCESS_TOKEN",
+        "BOT2_VERIFY_TOKEN"))
+    val facebotConnection = AkkaHttpConnection(botsCredentials) {
       case sendApi @ Event(_, Messaging.MessageReceived(sender, _, message))
           if !message.isEcho =>
-        sendApi.sendMessage(sender, Message("MESSAGE_TEXT"), Regular)
+        sendApi.sendMessage(sendApi.botName, sender, Message("MESSAGE_TEXT"), Regular)
     }
 ```
 Then initialize HTTP server and pass facebook REST route from `AkkaHttpConnection` object.
@@ -54,12 +58,17 @@ object runDebug {
     implicit val materializer = ActorMaterializer()
     implicit val executionContext = system.dispatcher
 
-    val facebotConnection = AkkaHttpConnection(Credentials(
-      "ACCESS_TOKEN",
-      "VERIFY_TOKEN")) {
+    val botsCredentials = Map(
+      "bot1Name" -> Credentials(
+        "BOT1_ACCESS_TOKEN",
+        "BOT1_VERIFY_TOKEN"),
+      "bot2Name" -> Credentials(
+        "BOT2_ACCESS_TOKEN",
+        "BOT2_VERIFY_TOKEN"))
+    val facebotConnection = AkkaHttpConnection(botsCredentials) {
       case sendApi @ Event(_, Messaging.MessageReceived(sender, _, message))
           if !message.isEcho =>
-        sendApi.sendMessage(sender, Message("MESSAGE_TEXT"), Regular)
+        sendApi.sendMessage(sendApi.botName, sender, Message("MESSAGE_TEXT"), Regular)
     }
 
     val bindingFuture =
